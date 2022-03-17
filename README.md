@@ -15,5 +15,5 @@ Supports three arguments to compare dry-run manifests of Kyma installations.
 Example:
 ```
 go build -o cleanupscriptgen
-./cleanupscriptgen "kyma-2.0.4-manifests.yaml" "kyma-2.0.5-manifests.yaml" "delete-resources.sh"
+./cleanupscriptgen "testdata/kyma-1.yaml" "testdata/kyma-2.yaml" "created-cleanup.sh"
 ```
