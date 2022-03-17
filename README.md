@@ -14,5 +14,6 @@ Supports three arguments to compare dry-run manifests of Kyma installations.
 
 Example:
 ```
-./main "kyma-2.0.4-manifests.yaml" "kyma-2.0.5-manifests.yaml" "delete-resources.sh"
+go build -o cleanupscriptgen
+./cleanupscriptgen "kyma-2.0.4-manifests.yaml" "kyma-2.0.5-manifests.yaml" "delete-resources.sh"
 ```
