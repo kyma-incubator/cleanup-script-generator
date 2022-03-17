@@ -3,12 +3,14 @@ package main
 import (
 	"bufio"
 	"errors"
+	"flag"
 	"fmt"
-	"gopkg.in/yaml.v3"
 	"io"
 	"os"
 	"sort"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 type manifest struct {
@@ -18,12 +20,20 @@ type manifest struct {
 }
 
 func main() {
+	var scriptFile string
+
+	flag.Usage = printUsage
+	flag.StringVar(&scriptFile, "output", "", "cleanup script file name")
+	flag.Parse()
+
+	if flag.NArg() < 2 {
+		printUsage()
+		os.Exit(2)
+	}
+
 	firstManifestsFile := os.Args[1]
 	secondManifestsFile := os.Args[2]
-	var scriptName string
-	if len(os.Args) == 4 {
-		scriptName = os.Args[3]
-	}
+
 	firstManifests, err := fileToManifest(firstManifestsFile)
 	if err != nil {
 		fmt.Printf("Error creating yaml from '%s': %v\n", firstManifests, err)
@@ -40,8 +50,8 @@ func main() {
 		return
 	}
 	printSummary(missingManifests)
-	if len(scriptName) > 0 {
-		generateDeletionScript(scriptName, missingManifests)
+	if len(scriptFile) > 0 {
+		generateDeletionScript(scriptFile, missingManifests)
 	}
 }
 
@@ -155,6 +165,11 @@ func generateDeletionScript(withName string, from []manifest) {
 		return
 	}
 	fmt.Printf("Deletion script created: '%s'", withName)
+}
+
+func printUsage() {
+	fmt.Println("Usage: cleanupscriptgen [options] org-manifest new-manifest")
+	flag.PrintDefaults()
 }
 
 func printSummary(manifests []manifest) {
