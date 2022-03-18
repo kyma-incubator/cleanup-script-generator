@@ -1,9 +1,8 @@
-# Cleanup Script Generator
+# migrate
 
 ## Overview
 
-Small program that compares manifests files created by Kyma CLI dry-run to identify orphaned resources after upgrading Kyma to higher versions.
-Can optionally create a shell script containing kubectl deletion commands to remove these resources.
+Small program that simplifies migration between 2 Kyma versions. It compares manifests files created by Kyma CLI dry-run to identify orphaned resources after upgrading Kyma to higher versions. Can optionally create a shell script containing kubectl deletion commands to remove these resources.
 
 ## Usage
 
@@ -14,6 +13,6 @@ Supports three arguments to compare dry-run manifests of Kyma installations.
 
 Example:
 ```
-go build -o cleanupscriptgen
-./cleanupscriptgen "testdata/kyma-1.yaml" "testdata/kyma-2.yaml" "testdata/created-cleanup.sh"
+go build -o migrate
+./migrate testdata/kyma-1.yaml testdata/kyma-2.yaml testdata/created-cleanup.sh
 ```
