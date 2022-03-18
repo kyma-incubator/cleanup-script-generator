@@ -31,8 +31,8 @@ func main() {
 		os.Exit(2)
 	}
 
-	firstManifestsFile := os.Args[1]
-	secondManifestsFile := os.Args[2]
+	firstManifestsFile := flag.Arg(0)
+	secondManifestsFile := flag.Arg(1)
 
 	firstManifests, err := fileToManifest(firstManifestsFile)
 	if err != nil {
@@ -110,6 +110,11 @@ func unmarshal(manifests string) ([]map[string]interface{}, error) {
 		if errors.Is(err, io.EOF) {
 			break
 		}
+		var typeError *yaml.TypeError
+		if errors.As(err, &typeError) {
+			fmt.Printf("WARN - type error: %v\n", err)
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -149,11 +154,12 @@ func generateDeletionScript(withName string, from []shortManifest) {
 		fmt.Printf("Error writing to file - %v", err)
 	}
 	for _, m := range from {
-		apiVersion := strings.ToLower(strings.Split(m.apiVersion, "/")[0])
 		kind := strings.ToLower(m.kind)
+		if strings.Contains(m.apiVersion, "/") {
+			kind = fmt.Sprintf("%ss.%s", kind, strings.ToLower(strings.Split(m.apiVersion, "/")[0]))
+		}
 		name := strings.ToLower(m.name)
-
-		deletionCmd := fmt.Sprintf("kubectl delete -n kyma-system %ss.%s %s\n", kind, apiVersion, name)
+		deletionCmd := fmt.Sprintf("kubectl delete -n kyma-system %s %s\n", kind, name)
 		_, err := w.WriteString(deletionCmd)
 		if err != nil {
 			fmt.Printf("Error writing to file - %v", err)
