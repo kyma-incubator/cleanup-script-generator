@@ -1,4 +1,4 @@
-# Clean-up Script Generator
+# Cleanup Script Generator
 
 ## Overview
 

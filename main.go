@@ -3,27 +3,37 @@ package main
 import (
 	"bufio"
 	"errors"
+	"flag"
 	"fmt"
-	"gopkg.in/yaml.v3"
 	"io"
 	"os"
 	"sort"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
-type manifest struct {
+type shortManifest struct {
 	apiVersion string
 	kind       string
 	name       string
 }
 
 func main() {
+	var scriptFile string
+
+	flag.Usage = printUsage
+	flag.StringVar(&scriptFile, "output", "", "cleanup script file name")
+	flag.Parse()
+
+	if flag.NArg() < 2 {
+		printUsage()
+		os.Exit(2)
+	}
+
 	firstManifestsFile := os.Args[1]
 	secondManifestsFile := os.Args[2]
-	var scriptName string
-	if len(os.Args) == 4 {
-		scriptName = os.Args[3]
-	}
+
 	firstManifests, err := fileToManifest(firstManifestsFile)
 	if err != nil {
 		fmt.Printf("Error creating yaml from '%s': %v\n", firstManifests, err)
@@ -40,13 +50,13 @@ func main() {
 		return
 	}
 	printSummary(missingManifests)
-	if len(scriptName) > 0 {
-		generateDeletionScript(scriptName, missingManifests)
+	if len(scriptFile) > 0 {
+		generateDeletionScript(scriptFile, missingManifests)
 	}
 }
 
-func compareManifests(left map[string]manifest, right map[string]manifest) []manifest {
-	var missingManifests []manifest
+func compareManifests(left, right map[string]shortManifest) []shortManifest {
+	var missingManifests []shortManifest
 	for k, v := range left {
 		if _, found := right[k]; !found {
 			missingManifests = append(missingManifests, v)
@@ -55,10 +65,10 @@ func compareManifests(left map[string]manifest, right map[string]manifest) []man
 	return missingManifests
 }
 
-func fileToManifest(filePath string) (map[string]manifest, error) {
+func fileToManifest(filePath string) (map[string]shortManifest, error) {
 	installManifestsYAML, err := os.ReadFile(filePath)
 	if err != nil {
-		fmt.Printf("Unable to read manifest file at 'v%': %v\n", filePath, err)
+		fmt.Printf("Unable to read manifest file at '%v': %v\n", filePath, err)
 		return nil, err
 	}
 	manifestsSlice, err := unmarshal(string(installManifestsYAML))
@@ -73,13 +83,13 @@ func fileToManifest(filePath string) (map[string]manifest, error) {
 		}
 		return getKind(left) < getKind(right)
 	})
-	manifests := make(map[string]manifest)
+	manifests := make(map[string]shortManifest)
 	for _, m := range manifestsSlice {
 		kind := getKind(m)
 		name := getName(m)
 		apiVersion := getApiVersion(m)
 		manifestKey := getKind(m) + getName(m)
-		manifests[manifestKey] = manifest{
+		manifests[manifestKey] = shortManifest{
 			apiVersion: apiVersion,
 			kind:       kind,
 			name:       name,
@@ -108,19 +118,19 @@ func unmarshal(manifests string) ([]map[string]interface{}, error) {
 	return results, nil
 }
 
-func getApiVersion(yaml map[string]interface{}) string {
-	return yaml["apiVersion"].(string)
+func getApiVersion(manifest map[string]interface{}) string {
+	return manifest["apiVersion"].(string)
 }
 
-func getKind(yaml map[string]interface{}) string {
-	return yaml["kind"].(string)
+func getKind(manifest map[string]interface{}) string {
+	return manifest["kind"].(string)
 }
 
-func getName(yaml map[string]interface{}) string {
-	return yaml["metadata"].(map[string]interface{})["name"].(string)
+func getName(manifest map[string]interface{}) string {
+	return manifest["metadata"].(map[string]interface{})["name"].(string)
 }
 
-func generateDeletionScript(withName string, from []manifest) {
+func generateDeletionScript(withName string, from []shortManifest) {
 	f, err := os.Create(withName)
 	if err != nil {
 		fmt.Printf("Unable to create file - %v", err)
@@ -157,7 +167,12 @@ func generateDeletionScript(withName string, from []manifest) {
 	fmt.Printf("Deletion script created: '%s'", withName)
 }
 
-func printSummary(manifests []manifest) {
+func printUsage() {
+	fmt.Println("Usage: cleanupscriptgen [options] org-manifest new-manifest")
+	flag.PrintDefaults()
+}
+
+func printSummary(manifests []shortManifest) {
 	if len(manifests) == 0 {
 		return
 	}
