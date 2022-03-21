@@ -174,7 +174,7 @@ func generateDeletionScript(withName string, from []shortManifest) {
 }
 
 func printUsage() {
-	fmt.Println("Usage: cleanupscriptgen [options] org-manifest new-manifest")
+	fmt.Println("Usage: migrate [options] org-manifest new-manifest")
 	flag.PrintDefaults()
 }
 
