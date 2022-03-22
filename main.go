@@ -20,39 +20,48 @@ type shortManifest struct {
 }
 
 func main() {
-	var scriptFile string
+	var firstManifestsFile, secondManifestsFile, scriptFile string
 
-	flag.Usage = printUsage
-	flag.StringVar(&scriptFile, "output", "", "cleanup script file name")
+	flag.StringVar(&firstManifestsFile, "from", "", "path to manifests file before upgrade")
+	flag.StringVar(&secondManifestsFile, "to", "", "path to manifests file of upgrade")
+	flag.StringVar(&scriptFile, "output", "", "name of the cleanup script file to be generated")
 	flag.Parse()
 
-	if flag.NArg() < 2 {
-		printUsage()
+	if err := run(firstManifestsFile, secondManifestsFile, scriptFile); err != nil {
+		fmt.Printf("Error: %v", err)
 		os.Exit(2)
 	}
+}
 
-	firstManifestsFile := flag.Arg(0)
-	secondManifestsFile := flag.Arg(1)
+func run(firstManifestsFile, secondManifestsFile, scriptFile string) error {
+	if len(firstManifestsFile) == 0 {
+		return errors.New("flag not specified: from")
+	}
+	if len(secondManifestsFile) == 0 {
+		return errors.New("flag not specified: to")
+	}
 
-	firstManifests, err := fileToManifest(firstManifestsFile)
+	firstManifests, err := parseManifest(firstManifestsFile)
 	if err != nil {
-		fmt.Printf("Error creating yaml from '%s': %v\n", firstManifests, err)
-		return
+		return err
 	}
-	secondManifests, err := fileToManifest(secondManifestsFile)
+	secondManifests, err := parseManifest(secondManifestsFile)
 	if err != nil {
-		fmt.Printf("Error creating yaml from '%s': %v\n", secondManifests, err)
-		return
+		return err
 	}
+
 	missingManifests := compareManifests(firstManifests, secondManifests)
 	if len(missingManifests) == 0 {
 		fmt.Printf("Manifests delta is ok.")
-		return
+		return nil
 	}
 	printSummary(missingManifests)
 	if len(scriptFile) > 0 {
-		generateDeletionScript(scriptFile, missingManifests)
+		if err = generateDeletionScript(scriptFile, missingManifests); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 func compareManifests(left, right map[string]shortManifest) []shortManifest {
@@ -65,16 +74,14 @@ func compareManifests(left, right map[string]shortManifest) []shortManifest {
 	return missingManifests
 }
 
-func fileToManifest(filePath string) (map[string]shortManifest, error) {
+func parseManifest(filePath string) (map[string]shortManifest, error) {
 	installManifestsYAML, err := os.ReadFile(filePath)
 	if err != nil {
-		fmt.Printf("Unable to read manifest file at '%v': %v\n", filePath, err)
-		return nil, err
+		return nil, fmt.Errorf("unable to read manifest file at '%v': %v", filePath, err)
 	}
 	manifestsSlice, err := unmarshal(string(installManifestsYAML))
 	if err != nil {
-		fmt.Printf("Unable to parse manifests: %v\n", err)
-		return nil, err
+		return nil, fmt.Errorf("unable to parse manifests: %v", err)
 	}
 	sort.Slice(manifestsSlice, func(i, j int) bool {
 		var left, right = manifestsSlice[i], manifestsSlice[j]
@@ -116,7 +123,7 @@ func unmarshal(manifests string) ([]map[string]interface{}, error) {
 			continue
 		}
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("unable to decode manifest to yaml: %v", err)
 		}
 		results = append(results, manifestYaml)
 	}
@@ -135,23 +142,20 @@ func getName(manifest map[string]interface{}) string {
 	return manifest["metadata"].(map[string]interface{})["name"].(string)
 }
 
-func generateDeletionScript(withName string, from []shortManifest) {
-	f, err := os.Create(withName)
+func generateDeletionScript(withName string, from []shortManifest) error {
+	file, err := os.Create(withName)
 	if err != nil {
-		fmt.Printf("Unable to create file - %v", err)
-		return
+		return fmt.Errorf("unable to create file: %v", err)
 	}
-	defer func(f *os.File) {
-		err := f.Close()
-		if err != nil {
-			fmt.Printf("Unable to create file - %v", err)
-		}
-	}(f)
 
-	w := bufio.NewWriter(f)
+	defer func(f *os.File) {
+		_ = f.Close()
+	}(file)
+
+	w := bufio.NewWriter(file)
 	_, err = w.WriteString("#!/usr/bin/env bash\n\n")
 	if err != nil {
-		fmt.Printf("Error writing to file - %v", err)
+		return fmt.Errorf("error writing to file: %v", err)
 	}
 	for _, m := range from {
 		kind := strings.ToLower(m.kind)
@@ -160,22 +164,17 @@ func generateDeletionScript(withName string, from []shortManifest) {
 		}
 		name := strings.ToLower(m.name)
 		deletionCmd := fmt.Sprintf("kubectl delete -n kyma-system %s %s\n", kind, name)
-		_, err := w.WriteString(deletionCmd)
+		_, err = w.WriteString(deletionCmd)
 		if err != nil {
-			fmt.Printf("Error writing to file - %v", err)
+			return fmt.Errorf("error writing to file: %v", err)
 		}
 	}
 	err = w.Flush()
 	if err != nil {
-		fmt.Printf("Error writing to file - %v", err)
-		return
+		return fmt.Errorf("error writing to file - %v", err)
 	}
 	fmt.Printf("Deletion script created: '%s'", withName)
-}
-
-func printUsage() {
-	fmt.Println("Usage: migrate [options] org-manifest new-manifest")
-	flag.PrintDefaults()
+	return nil
 }
 
 func printSummary(manifests []shortManifest) {
