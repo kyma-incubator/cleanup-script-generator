@@ -36,43 +36,44 @@ func main() {
 		"\nExample: -ignore service:foo,servicemonitors.monitoring.coreos.com:bar")
 	flag.Parse()
 
-	if err := run(args); err != nil {
-		fmt.Printf("Error: %v", err)
+	out := os.Stdout
+	if err := run(out, args); err != nil {
+		fmt.Fprintf(out, "Error: %v\n", err)
 		os.Exit(2)
 	}
 }
 
-func run(args flags) error {
-	if len(args.fromFile) == 0 {
+func run(out io.Writer, f flags) error {
+	if len(f.fromFile) == 0 {
 		return errors.New("flag not specified: from")
 	}
-	if len(args.toFile) == 0 {
+	if len(f.toFile) == 0 {
 		return errors.New("flag not specified: to")
 	}
 
-	from, err := parseManifest(args.fromFile)
+	from, err := parseManifest(out, f.fromFile)
 	if err != nil {
 		return err
 	}
-	to, err := parseManifest(args.toFile)
+	to, err := parseManifest(out, f.toFile)
 	if err != nil {
 		return err
 	}
 	var ignored []shortManifest
-	if len(args.ignored) > 0 {
-		ignored, err = parseIgnoredManifests(args.ignored)
+	if len(f.ignored) > 0 {
+		ignored, err = parseIgnoredManifests(f.ignored)
 		if err != nil {
 			return err
 		}
 	}
 	missing := compare(from, to, ignored)
 	if len(missing) == 0 {
-		fmt.Printf("Manifests delta is ok.")
+		fmt.Fprintf(out, "Manifests delta is ok\n")
 		return nil
 	}
-	printSummary(missing)
-	if len(args.outputFile) > 0 {
-		if err = generateDeletionScript(args.outputFile, missing); err != nil {
+	printSummary(out, missing)
+	if len(f.outputFile) > 0 {
+		if err = generateDeletionScript(out, f.outputFile, missing); err != nil {
 			return err
 		}
 	}
@@ -118,12 +119,12 @@ func shouldIgnore(found shortManifest, ignored []shortManifest) bool {
 	return false
 }
 
-func parseManifest(filePath string) (map[string]shortManifest, error) {
+func parseManifest(out io.Writer, filePath string) (map[string]shortManifest, error) {
 	installManifestsYAML, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read manifest file at '%v': %v", filePath, err)
 	}
-	manifestsSlice, err := unmarshal(string(installManifestsYAML))
+	manifestsSlice, err := unmarshal(out, string(installManifestsYAML))
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse manifests: %v", err)
 	}
@@ -149,7 +150,7 @@ func parseManifest(filePath string) (map[string]shortManifest, error) {
 	return manifests, nil
 }
 
-func unmarshal(manifests string) ([]map[string]interface{}, error) {
+func unmarshal(out io.Writer, manifests string) ([]map[string]interface{}, error) {
 	var results []map[string]interface{}
 	decoder := yaml.NewDecoder(strings.NewReader(manifests))
 	for {
@@ -163,7 +164,7 @@ func unmarshal(manifests string) ([]map[string]interface{}, error) {
 		}
 		var typeError *yaml.TypeError
 		if errors.As(err, &typeError) {
-			fmt.Printf("WARN - type error: %v\n", err)
+			fmt.Fprintf(out, "WARN - type error: %v\n", err)
 			continue
 		}
 		if err != nil {
@@ -186,10 +187,10 @@ func getName(manifest map[string]interface{}) string {
 	return manifest["metadata"].(map[string]interface{})["name"].(string)
 }
 
-func generateDeletionScript(withName string, from []shortManifest) error {
+func generateDeletionScript(out io.Writer, withName string, from []shortManifest) error {
 	file, err := os.Create(withName)
 	if err != nil {
-		return fmt.Errorf("unable to create file: %v", err)
+		return fmt.Errorf("unable to crea te file: %v", err)
 	}
 	defer func(f *os.File) {
 		_ = f.Close()
@@ -215,16 +216,16 @@ func generateDeletionScript(withName string, from []shortManifest) error {
 	if err != nil {
 		return fmt.Errorf("error writing to file - %v", err)
 	}
-	fmt.Printf("Deletion script created: '%s'", withName)
+	fmt.Fprintf(out, "Deletion script created: '%s'\n", withName)
 	return nil
 }
 
-func printSummary(manifests []shortManifest) {
+func printSummary(out io.Writer, manifests []shortManifest) {
 	if len(manifests) == 0 {
 		return
 	}
-	fmt.Println("Resources to be deleted after upgrade:")
+	fmt.Fprintf(out, "Resources to be deleted after upgrade:\n")
 	for _, m := range manifests {
-		fmt.Printf("%+v\n", m)
+		fmt.Fprintf(out, "%+v\n", m)
 	}
 }
