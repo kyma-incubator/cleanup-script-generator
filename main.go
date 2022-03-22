@@ -19,59 +19,103 @@ type shortManifest struct {
 	name       string
 }
 
-func main() {
-	var firstManifestsFile, secondManifestsFile, scriptFile string
+type flags struct {
+	fromFile   string
+	toFile     string
+	outputFile string
+	ignored    string
+}
 
-	flag.StringVar(&firstManifestsFile, "from", "", "path to manifests file before upgrade")
-	flag.StringVar(&secondManifestsFile, "to", "", "path to manifests file of upgrade")
-	flag.StringVar(&scriptFile, "output", "", "name of the cleanup script file to be generated")
+func main() {
+	var args = flags{}
+	flag.StringVar(&args.fromFile, "from", "", "Path to manifests file before upgrade.")
+	flag.StringVar(&args.toFile, "to", "", "Path to manifests file of upgrade.")
+	flag.StringVar(&args.outputFile, "output", "", "Name of the cleanup script file to be generated.")
+	flag.StringVar(&args.ignored, "ignore", "", "List of resources to ignore."+
+		"\nUsage: -ignore kind1:name1,kind2:name2"+
+		"\nExample: -ignore service:foo,servicemonitors.monitoring.coreos.com:bar")
 	flag.Parse()
 
-	if err := run(firstManifestsFile, secondManifestsFile, scriptFile); err != nil {
+	if err := run(args); err != nil {
 		fmt.Printf("Error: %v", err)
 		os.Exit(2)
 	}
 }
 
-func run(firstManifestsFile, secondManifestsFile, scriptFile string) error {
-	if len(firstManifestsFile) == 0 {
+func run(args flags) error {
+	if len(args.fromFile) == 0 {
 		return errors.New("flag not specified: from")
 	}
-	if len(secondManifestsFile) == 0 {
+	if len(args.toFile) == 0 {
 		return errors.New("flag not specified: to")
 	}
 
-	firstManifests, err := parseManifest(firstManifestsFile)
+	from, err := parseManifest(args.fromFile)
 	if err != nil {
 		return err
 	}
-	secondManifests, err := parseManifest(secondManifestsFile)
+	to, err := parseManifest(args.toFile)
 	if err != nil {
 		return err
 	}
-
-	missingManifests := compareManifests(firstManifests, secondManifests)
-	if len(missingManifests) == 0 {
+	var ignored []shortManifest
+	if len(args.ignored) > 0 {
+		ignored, err = parseIgnoredManifests(args.ignored)
+		if err != nil {
+			return err
+		}
+	}
+	missing := compare(from, to, ignored)
+	if len(missing) == 0 {
 		fmt.Printf("Manifests delta is ok.")
 		return nil
 	}
-	printSummary(missingManifests)
-	if len(scriptFile) > 0 {
-		if err = generateDeletionScript(scriptFile, missingManifests); err != nil {
+	printSummary(missing)
+	if len(args.outputFile) > 0 {
+		if err = generateDeletionScript(args.outputFile, missing); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func compareManifests(left, right map[string]shortManifest) []shortManifest {
+func parseIgnoredManifests(ignored string) ([]shortManifest, error) {
+	manifestStrings := strings.Split(ignored, ",")
+	var ignoreManifests []shortManifest
+	for _, manifestString := range manifestStrings {
+		manifest := strings.Split(manifestString, ":")
+		if len(manifest) != 2 {
+			return nil, fmt.Errorf("invalid ignored manifest format: %v", manifestString)
+		}
+		ignoreManifests = append(ignoreManifests, shortManifest{
+			apiVersion: "",
+			kind:       manifest[0],
+			name:       manifest[1],
+		})
+	}
+	return ignoreManifests, nil
+}
+
+func compare(left, right map[string]shortManifest, ignored []shortManifest) []shortManifest {
 	var missingManifests []shortManifest
 	for k, v := range left {
 		if _, found := right[k]; !found {
+			if len(ignored) > 0 && shouldIgnore(v, ignored) {
+				continue
+			}
 			missingManifests = append(missingManifests, v)
 		}
 	}
 	return missingManifests
+}
+
+func shouldIgnore(found shortManifest, ignored []shortManifest) bool {
+	for _, ignoredManifest := range ignored {
+		if ignoredManifest.kind == found.kind && ignoredManifest.name == found.name {
+			return true
+		}
+	}
+	return false
 }
 
 func parseManifest(filePath string) (map[string]shortManifest, error) {
@@ -147,11 +191,9 @@ func generateDeletionScript(withName string, from []shortManifest) error {
 	if err != nil {
 		return fmt.Errorf("unable to create file: %v", err)
 	}
-
 	defer func(f *os.File) {
 		_ = f.Close()
 	}(file)
-
 	w := bufio.NewWriter(file)
 	_, err = w.WriteString("#!/usr/bin/env bash\n\n")
 	if err != nil {
