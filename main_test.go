@@ -35,6 +35,17 @@ kubectl delete -n kyma-system deployments.apps rafter-asyncapi-svc
 kubectl delete -n kyma-system servicemonitors.monitoring.coreos.com rafter-controller-manager
 `,
 		},
+		{
+			summary:    "one orphans after upgrade with ignored",
+			fromFile:   path.Join("testdata", "kyma-1.yaml"),
+			toFile:     path.Join("testdata", "kyma-2.yaml"),
+			outputFile: path.Join("testdata", "test-result.sh"),
+			ignored:    "deployments.apps:rafter-asyncapi-svc",
+			expectedOutput: `#!/usr/bin/env bash
+
+kubectl delete -n kyma-system servicemonitors.monitoring.coreos.com rafter-controller-manager
+`,
+		},
 	}
 
 	for _, tc := range tests {

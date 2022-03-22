@@ -13,10 +13,15 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type shortManifest struct {
+type kindNameVersion struct {
 	apiVersion string
 	kind       string
 	name       string
+}
+
+type kindName struct {
+	kind string
+	name string
 }
 
 type flags struct {
@@ -59,76 +64,85 @@ func run(out io.Writer, f flags) error {
 	if err != nil {
 		return err
 	}
-	var ignored []shortManifest
+	var ignored []kindName
 	if len(f.ignored) > 0 {
 		ignored, err = parseIgnoredManifests(f.ignored)
 		if err != nil {
 			return err
 		}
 	}
-	missing := compare(from, to, ignored)
-	if len(missing) == 0 {
-		fmt.Fprintf(out, "Manifests delta is ok\n")
+	orphaned := compare(from, to)
+	if len(orphaned) == 0 {
+		fmt.Fprintf(out, "Manifests are equal\n")
 		return nil
 	}
-	printSummary(out, missing)
+	orphaned = removeIgnored(orphaned, ignored)
+
+	printSummary(out, orphaned)
 	if len(f.outputFile) > 0 {
-		if err = generateDeletionScript(out, f.outputFile, missing); err != nil {
+		if err = generateDeletionScript(out, f.outputFile, orphaned); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func parseIgnoredManifests(ignored string) ([]shortManifest, error) {
+func parseIgnoredManifests(ignored string) ([]kindName, error) {
 	manifestStrings := strings.Split(ignored, ",")
-	var ignoreManifests []shortManifest
+	var ignoreManifests []kindName
 	for _, manifestString := range manifestStrings {
 		manifest := strings.Split(manifestString, ":")
 		if len(manifest) != 2 {
 			return nil, fmt.Errorf("invalid ignored manifest format: %v", manifestString)
 		}
-		ignoreManifests = append(ignoreManifests, shortManifest{
-			apiVersion: "",
-			kind:       manifest[0],
-			name:       manifest[1],
+		ignoreManifests = append(ignoreManifests, kindName{
+			kind: manifest[0],
+			name: manifest[1],
 		})
 	}
 	return ignoreManifests, nil
 }
 
-func compare(left, right map[string]shortManifest, ignored []shortManifest) []shortManifest {
-	var orphanManifests []shortManifest
+func compare(left, right map[string]kindNameVersion) []kindNameVersion {
+	var orphaned []kindNameVersion
 	for k, v := range left {
 		if _, found := right[k]; !found {
-			if len(ignored) > 0 && shouldIgnore(v, ignored) {
-				continue
-			}
-			orphanManifests = append(orphanManifests, v)
+			orphaned = append(orphaned, v)
 		}
 	}
 
-	sort.Slice(orphanManifests, func(i, j int) bool {
-		var left, right = orphanManifests[i], orphanManifests[j]
+	sort.Slice(orphaned, func(i, j int) bool {
+		var left, right = orphaned[i], orphaned[j]
 		if left.kind == right.kind {
 			return left.name < right.name
 		}
 		return left.kind < right.kind
 	})
 
-	return orphanManifests
+	return orphaned
 }
 
-func shouldIgnore(found shortManifest, ignored []shortManifest) bool {
-	for _, ignoredManifest := range ignored {
-		if ignoredManifest.kind == found.kind && ignoredManifest.name == found.name {
+func removeIgnored(knms []kindNameVersion, ignored []kindName) []kindNameVersion {
+	var filtered []kindNameVersion
+	for _, knm := range knms {
+		if len(ignored) > 0 && shouldIgnore(knm, ignored) {
+			continue
+		}
+		filtered = append(filtered, knm)
+	}
+	return filtered
+}
+
+func shouldIgnore(found kindNameVersion, ignored []kindName) bool {
+	for _, i := range ignored {
+		if i.kind == simpleKind(found) && i.name == found.name {
 			return true
 		}
 	}
 	return false
 }
 
-func parseManifest(out io.Writer, filePath string) (map[string]shortManifest, error) {
+func parseManifest(out io.Writer, filePath string) (map[string]kindNameVersion, error) {
 	installManifestsYAML, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read manifest file at '%v': %v", filePath, err)
@@ -137,19 +151,18 @@ func parseManifest(out io.Writer, filePath string) (map[string]shortManifest, er
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse manifests: %v", err)
 	}
-	manifests := make(map[string]shortManifest)
+	results := make(map[string]kindNameVersion)
 	for _, m := range manifestsSlice {
 		kind := getKind(m)
 		name := getName(m)
-		apiVersion := getApiVersion(m)
-		manifestKey := getKind(m) + getName(m)
-		manifests[manifestKey] = shortManifest{
+		apiVersion := getAPIVersion(m)
+		results[getKind(m)+getName(m)] = kindNameVersion{
 			apiVersion: apiVersion,
 			kind:       kind,
 			name:       name,
 		}
 	}
-	return manifests, nil
+	return results, nil
 }
 
 func unmarshal(out io.Writer, manifests string) ([]map[string]interface{}, error) {
@@ -177,7 +190,7 @@ func unmarshal(out io.Writer, manifests string) ([]map[string]interface{}, error
 	return results, nil
 }
 
-func getApiVersion(manifest map[string]interface{}) string {
+func getAPIVersion(manifest map[string]interface{}) string {
 	return manifest["apiVersion"].(string)
 }
 
@@ -189,7 +202,7 @@ func getName(manifest map[string]interface{}) string {
 	return manifest["metadata"].(map[string]interface{})["name"].(string)
 }
 
-func generateDeletionScript(out io.Writer, withName string, from []shortManifest) error {
+func generateDeletionScript(out io.Writer, withName string, from []kindNameVersion) error {
 	file, err := os.Create(withName)
 	if err != nil {
 		return fmt.Errorf("unable to crea te file: %v", err)
@@ -203,10 +216,7 @@ func generateDeletionScript(out io.Writer, withName string, from []shortManifest
 		return fmt.Errorf("error writing to file: %v", err)
 	}
 	for _, m := range from {
-		kind := strings.ToLower(m.kind)
-		if strings.Contains(m.apiVersion, "/") {
-			kind = fmt.Sprintf("%ss.%s", kind, strings.ToLower(strings.Split(m.apiVersion, "/")[0]))
-		}
+		kind := simpleKind(m)
 		name := strings.ToLower(m.name)
 		deletionCmd := fmt.Sprintf("kubectl delete -n kyma-system %s %s\n", kind, name)
 		_, err = w.WriteString(deletionCmd)
@@ -222,7 +232,7 @@ func generateDeletionScript(out io.Writer, withName string, from []shortManifest
 	return nil
 }
 
-func printSummary(out io.Writer, manifests []shortManifest) {
+func printSummary(out io.Writer, manifests []kindNameVersion) {
 	if len(manifests) == 0 {
 		return
 	}
@@ -230,4 +240,12 @@ func printSummary(out io.Writer, manifests []shortManifest) {
 	for _, m := range manifests {
 		fmt.Fprintf(out, "%+v\n", m)
 	}
+}
+
+func simpleKind(m kindNameVersion) string {
+	kind := strings.ToLower(m.kind)
+	if strings.Contains(m.apiVersion, "/") {
+		kind = fmt.Sprintf("%ss.%s", kind, strings.ToLower(strings.Split(m.apiVersion, "/")[0]))
+	}
+	return kind
 }
