@@ -98,16 +98,25 @@ func parseIgnoredManifests(ignored string) ([]shortManifest, error) {
 }
 
 func compare(left, right map[string]shortManifest, ignored []shortManifest) []shortManifest {
-	var missingManifests []shortManifest
+	var orphanManifests []shortManifest
 	for k, v := range left {
 		if _, found := right[k]; !found {
 			if len(ignored) > 0 && shouldIgnore(v, ignored) {
 				continue
 			}
-			missingManifests = append(missingManifests, v)
+			orphanManifests = append(orphanManifests, v)
 		}
 	}
-	return missingManifests
+
+	sort.Slice(orphanManifests, func(i, j int) bool {
+		var left, right = orphanManifests[i], orphanManifests[j]
+		if left.kind == right.kind {
+			return left.name < right.name
+		}
+		return left.kind < right.kind
+	})
+
+	return orphanManifests
 }
 
 func shouldIgnore(found shortManifest, ignored []shortManifest) bool {
@@ -128,13 +137,6 @@ func parseManifest(out io.Writer, filePath string) (map[string]shortManifest, er
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse manifests: %v", err)
 	}
-	sort.Slice(manifestsSlice, func(i, j int) bool {
-		var left, right = manifestsSlice[i], manifestsSlice[j]
-		if getKind(left) == getKind(right) {
-			return getName(left) < getName(right)
-		}
-		return getKind(left) < getKind(right)
-	})
 	manifests := make(map[string]shortManifest)
 	for _, m := range manifestsSlice {
 		kind := getKind(m)

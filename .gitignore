@@ -2,3 +2,4 @@
 /out/
 .idea_modules/
 *.DS_Store
+testdata/test-result.sh
