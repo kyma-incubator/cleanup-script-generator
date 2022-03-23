@@ -14,5 +14,5 @@ Supports three arguments to compare dry-run manifests of Kyma installations.
 Example:
 ```
 go build -o migrate
-./migrate -output testdata/created-cleanup.sh testdata/kyma-1.yaml  testdata/created-cleanup.sh
+./migrate -from testdata/kyma-1.yaml -to testdata/kyma-1.yaml -output testdata/created-cleanup.sh 
 ```

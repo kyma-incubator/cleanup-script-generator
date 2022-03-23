@@ -1,4 +1,4 @@
-module diff-manifests
+module migrate
 
 go 1.17
 
