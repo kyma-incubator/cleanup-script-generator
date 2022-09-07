@@ -113,11 +113,11 @@ func compare(left, right map[string]kindNameVersion) []kindNameVersion {
 	}
 
 	sort.Slice(orphaned, func(i, j int) bool {
-		var left, right = orphaned[i], orphaned[j]
-		if left.kind == right.kind {
-			return left.name < right.name
+		var l, r = orphaned[i], orphaned[j]
+		if l.kind == r.kind {
+			return l.name < r.name
 		}
-		return left.kind < right.kind
+		return l.kind < r.kind
 	})
 
 	return orphaned
@@ -232,7 +232,10 @@ func generateDeletionScript(out io.Writer, withName string, from []kindNameVersi
 	if err != nil {
 		return fmt.Errorf("error writing to file - %v", err)
 	}
-	fmt.Fprintf(out, "Deletion script created: '%s'\n", withName)
+	_, err = fmt.Fprintf(out, "Deletion script created: '%s'\n", withName)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -241,6 +244,7 @@ func printSummary(out io.Writer, manifests []kindNameVersion) {
 		return
 	}
 	fmt.Fprintf(out, "Resources to be deleted after upgrade:\n")
+
 	for _, m := range manifests {
 		fmt.Fprintf(out, "%+v\n", m)
 	}
