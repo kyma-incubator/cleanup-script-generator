@@ -122,13 +122,13 @@ func compare(left, right map[string]kindNameVersion) []kindNameVersion {
 	return orphaned
 }
 
-func removeIgnored(knms []kindNameVersion, ignored []kindName) []kindNameVersion {
+func removeIgnored(knvs []kindNameVersion, ignored []kindName) []kindNameVersion {
 	var filtered []kindNameVersion
-	for _, knm := range knms {
-		if len(ignored) > 0 && shouldIgnore(knm, ignored) {
+	for _, knv := range knvs {
+		if len(ignored) > 0 && shouldIgnore(knv, ignored) {
 			continue
 		}
-		filtered = append(filtered, knm)
+		filtered = append(filtered, knv)
 	}
 	return filtered
 }
