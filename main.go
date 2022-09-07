@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/gertd/go-pluralize"
 	"io"
 	"os"
 	"sort"
@@ -215,7 +216,10 @@ func generateDeletionScript(out io.Writer, withName string, from []kindNameVersi
 	if err != nil {
 		return fmt.Errorf("error writing to file: %v", err)
 	}
+
+	pluralizer := pluralize.NewClient()
 	for _, m := range from {
+		m.kind = pluralizer.Plural(m.kind)
 		kind := simpleKind(m)
 		name := strings.ToLower(m.name)
 		deletionCmd := fmt.Sprintf("kubectl delete -n kyma-system %s %s\n", kind, name)
@@ -245,7 +249,7 @@ func printSummary(out io.Writer, manifests []kindNameVersion) {
 func simpleKind(m kindNameVersion) string {
 	kind := strings.ToLower(m.kind)
 	if strings.Contains(m.apiVersion, "/") {
-		kind = fmt.Sprintf("%ss.%s", kind, strings.ToLower(strings.Split(m.apiVersion, "/")[0]))
+		kind = fmt.Sprintf("%s.%s", kind, strings.ToLower(strings.Split(m.apiVersion, "/")[0]))
 	}
 	return kind
 }
