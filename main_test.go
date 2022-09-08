@@ -31,8 +31,11 @@ func TestCLI(t *testing.T) {
 			outputFile: path.Join("testdata", "test-result.sh"),
 			expectedOutput: `#!/usr/bin/env bash
 
-kubectl delete -n kyma-system deployments.apps rafter-asyncapi-svc
-kubectl delete -n kyma-system servicemonitors.monitoring.coreos.com rafter-controller-manager
+kubectl delete -n kyma-system authorizationpolicies.security.istio.io tracing-jaeger
+kubectl delete -n kyma-system clusterrolebindings.rbac.authorization.k8s.io cluster-essentials-pod-preset-webhook
+kubectl delete -n kyma-system configmaps tracing-grafana-dashboard
+kubectl delete -n kyma-system podsecuritypolicies.policy 002-kyma-privileged
+kubectl delete -n kyma-system servicemonitors.monitoring.coreos.com tracing-jaeger-operator
 `,
 		},
 		{
@@ -40,10 +43,12 @@ kubectl delete -n kyma-system servicemonitors.monitoring.coreos.com rafter-contr
 			fromFile:   path.Join("testdata", "kyma-1.yaml"),
 			toFile:     path.Join("testdata", "kyma-2.yaml"),
 			outputFile: path.Join("testdata", "test-result.sh"),
-			ignored:    "deployments.apps:rafter-asyncapi-svc",
+			ignored:    "servicemonitor.monitoring.coreos.com:tracing-jaeger-operator,configmap:tracing-grafana-dashboard",
 			expectedOutput: `#!/usr/bin/env bash
 
-kubectl delete -n kyma-system servicemonitors.monitoring.coreos.com rafter-controller-manager
+kubectl delete -n kyma-system authorizationpolicies.security.istio.io tracing-jaeger
+kubectl delete -n kyma-system clusterrolebindings.rbac.authorization.k8s.io cluster-essentials-pod-preset-webhook
+kubectl delete -n kyma-system podsecuritypolicies.policy 002-kyma-privileged
 `,
 		},
 	}

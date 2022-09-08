@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/gertd/go-pluralize"
 	"io"
 	"os"
 	"sort"
@@ -112,23 +113,23 @@ func compare(left, right map[string]kindNameVersion) []kindNameVersion {
 	}
 
 	sort.Slice(orphaned, func(i, j int) bool {
-		var left, right = orphaned[i], orphaned[j]
-		if left.kind == right.kind {
-			return left.name < right.name
+		var l, r = orphaned[i], orphaned[j]
+		if l.kind == r.kind {
+			return l.name < r.name
 		}
-		return left.kind < right.kind
+		return l.kind < r.kind
 	})
 
 	return orphaned
 }
 
-func removeIgnored(knms []kindNameVersion, ignored []kindName) []kindNameVersion {
+func removeIgnored(knvs []kindNameVersion, ignored []kindName) []kindNameVersion {
 	var filtered []kindNameVersion
-	for _, knm := range knms {
-		if len(ignored) > 0 && shouldIgnore(knm, ignored) {
+	for _, knv := range knvs {
+		if len(ignored) > 0 && shouldIgnore(knv, ignored) {
 			continue
 		}
-		filtered = append(filtered, knm)
+		filtered = append(filtered, knv)
 	}
 	return filtered
 }
@@ -215,7 +216,10 @@ func generateDeletionScript(out io.Writer, withName string, from []kindNameVersi
 	if err != nil {
 		return fmt.Errorf("error writing to file: %v", err)
 	}
+
+	pluralizer := pluralize.NewClient()
 	for _, m := range from {
+		m.kind = pluralizer.Plural(m.kind)
 		kind := simpleKind(m)
 		name := strings.ToLower(m.name)
 		deletionCmd := fmt.Sprintf("kubectl delete -n kyma-system %s %s\n", kind, name)
@@ -228,7 +232,10 @@ func generateDeletionScript(out io.Writer, withName string, from []kindNameVersi
 	if err != nil {
 		return fmt.Errorf("error writing to file - %v", err)
 	}
-	fmt.Fprintf(out, "Deletion script created: '%s'\n", withName)
+	_, err = fmt.Fprintf(out, "Deletion script created: '%s'\n", withName)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -237,6 +244,7 @@ func printSummary(out io.Writer, manifests []kindNameVersion) {
 		return
 	}
 	fmt.Fprintf(out, "Resources to be deleted after upgrade:\n")
+
 	for _, m := range manifests {
 		fmt.Fprintf(out, "%+v\n", m)
 	}
@@ -245,7 +253,7 @@ func printSummary(out io.Writer, manifests []kindNameVersion) {
 func simpleKind(m kindNameVersion) string {
 	kind := strings.ToLower(m.kind)
 	if strings.Contains(m.apiVersion, "/") {
-		kind = fmt.Sprintf("%ss.%s", kind, strings.ToLower(strings.Split(m.apiVersion, "/")[0]))
+		kind = fmt.Sprintf("%s.%s", kind, strings.ToLower(strings.Split(m.apiVersion, "/")[0]))
 	}
 	return kind
 }
